@@ -1,0 +1,18 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/config.2.0.schema.json",
+  "version": "2.0",
+  "bundles": {
+    "score-display-web-part": {
+      "components": [
+        {
+          "entrypoint": "./lib/webparts/scoreDisplay/ScoreDisplayWebPart.js",
+          "manifest": "./src/webparts/scoreDisplay/ScoreDisplayWebPart.manifest.json"
+        }
+      ]
+    }
+  },
+  "externals": {},
+  "localizedResources": {
+    "ScoreDisplayWebPartStrings": "lib/webparts/scoreDisplay/loc/{locale}.js"
+  }
+}

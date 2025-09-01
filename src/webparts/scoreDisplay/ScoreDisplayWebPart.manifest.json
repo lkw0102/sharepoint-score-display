@@ -1,0 +1,21 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx/client-side-web-part-manifest.schema.json",
+  "id": "f4fc51cd-bc6c-4309-aa63-591a5d35e8b7",
+  "alias": "ScoreDisplayWebPart",
+  "componentType": "WebPart",
+  "version": "0.0.1",
+  "manifestVersion": 2,
+  "requiresCustomScript": false,
+  "supportedHosts": ["SharePointWebPart", "TeamsPersonalApp", "TeamsTab", "SharePointFullPage"],
+  "supportsThemeVariants": true,
+  "preconfiguredEntries": [{
+    "groupId": "5c03119e-3074-46fd-976b-c60198311f70",
+    "group": { "default": "Other" },
+    "title": { "default": "學生成績顯示" },
+    "description": { "default": "顯示學生成績的Web Part，支持搜索、篩選和數據導出功能" },
+    "officeFabricIconFontName": "Page",
+    "properties": {
+      "description": "學生成績管理系統"
+    }
+  }]
+}

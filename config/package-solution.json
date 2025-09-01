@@ -1,0 +1,40 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
+  "solution": {
+    "name": "student-grades-display-client-side-solution",
+    "id": "e99c141d-731a-46ff-a993-4e032d0d45d9",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "developer": {
+      "name": "Student Grades System",
+      "websiteUrl": "",
+      "privacyUrl": "",
+      "termsOfUseUrl": "",
+      "mpnId": "Undefined-1.21.1"
+    },
+    "metadata": {
+      "shortDescription": {
+        "default": "學生成績顯示系統 - 支持搜索、篩選和數據導出功能"
+      },
+      "longDescription": {
+        "default": "這是一個使用SharePoint Framework開發的學生成績顯示Web Part，提供完整的成績管理功能，包括動態表格顯示、搜索篩選、統計分析和CSV導出。"
+      },
+      "screenshotPaths": [],
+      "videoUrl": "",
+      "categories": []
+    },
+    "features": [
+      {
+        "title": "學生成績顯示功能",
+        "description": "提供學生成績顯示、搜索、篩選和數據導出功能",
+        "id": "291f0a80-fd76-41a2-b75f-7626632b2716",
+        "version": "1.0.0.0"
+      }
+    ]
+  },
+  "paths": {
+    "zippedPackage": "solution/student-grades-display.sppkg"
+  }
+}

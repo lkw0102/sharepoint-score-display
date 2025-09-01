@@ -1,0 +1,18 @@
+{
+  "@microsoft/generator-sharepoint": {
+    "plusBeta": false,
+    "isCreatingSolution": true,
+    "nodeVersion": "18.17.1",
+    "sdksVersions": {},
+    "version": "1.21.1",
+    "libraryName": "score-display",
+    "libraryId": "e99c141d-731a-46ff-a993-4e032d0d45d9",
+    "environment": "spo",
+    "packageManager": "npm",
+    "solutionName": "score-display",
+    "solutionShortDescription": "score-display description",
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "componentType": "webpart"
+  }
+}
