@@ -6,6 +6,7 @@ import {
 import { BaseClientSideWebPart } from '@microsoft/sp-webpart-base';
 import type { IReadonlyTheme } from '@microsoft/sp-component-base';
 import { SPHttpClient, SPHttpClientResponse } from '@microsoft/sp-http';
+import * as XLSX from 'xlsx';
 
 import styles from './ScoreDisplayWebPart.module.scss';
 import * as strings from 'ScoreDisplayWebPartStrings';
@@ -14,16 +15,7 @@ export interface IScoreDisplayWebPartProps {
   description: string;
 }
 
-interface Student {
-  studentId: string;
-  name: string;
-  chinese: number;
-  english: number;
-  math: number;
-  science: number;
-  total: number;
-  average: number;
-}
+type StudentRow = Record<string, string | number | undefined>;
 
 interface PageInfo {
   pageName: string;
@@ -41,8 +33,9 @@ interface UserInfo {
 
 export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDisplayWebPartProps> {
 
-  private students: Student[] = [];
-  private filteredStudents: Student[] = [];
+  private students: StudentRow[] = [];
+  private filteredStudents: StudentRow[] = [];
+  private columns: string[] = [];
   private pageInfo: PageInfo | null = null;
   private userInfo: UserInfo | null = null;
 
@@ -51,7 +44,7 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
       this.domElement.innerHTML = `
       <div class="${styles.scoreDisplay || 'scoreDisplay'}">
         <div class="${styles.header || 'header'}">
-          <h1>學生成績</h1>
+          <h1 id="headerTitle">載入中...</h1>
         </div>
         
         <div class="${styles.content || 'content'}">
@@ -70,7 +63,7 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
               <input 
                 id="searchInput"
                 type="text" 
-                placeholder="搜尋學生姓名或學號..." 
+                placeholder="搜尋...（跨所有欄位）" 
                 class="${styles.filterInput || 'filterInput'}"
               >
               <button id="exportBtn" class="${styles.exportBtn || 'exportBtn'}">匯出 CSV</button>
@@ -80,41 +73,13 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
             <div class="${styles.tableContainer || 'tableContainer'}">
               <table id="gradesTable" class="${styles.gradesTable || 'gradesTable'}">
                 <thead>
-                  <tr>
-                    <th>學號</th>
-                    <th>姓名</th>
-                    <th>中文</th>
-                    <th>英文</th>
-                    <th>數學</th>
-                    <th>科學</th>
-                    <th>總分</th>
-                    <th>平均分</th>
-                  </tr>
+                  <tr id="tableHeader"></tr>
                 </thead>
-                <tbody id="tableBody">
-                </tbody>
+                <tbody id="tableBody"></tbody>
               </table>
             </div>
             
-            <!-- 統計資訊 -->
-            <div class="${styles.summaryStats || 'summaryStats'}">
-              <div class="${styles.statCard || 'statCard'}">
-                <h3>總學生數</h3>
-                <p id="totalStudents" class="${styles.statNumber || 'statNumber'}">0</p>
-              </div>
-              <div class="${styles.statCard || 'statCard'}">
-                <h3>平均分數</h3>
-                <p id="averageScore" class="${styles.statNumber || 'statNumber'}">0.00</p>
-              </div>
-              <div class="${styles.statCard || 'statCard'}">
-                <h3>最高分數</h3>
-                <p id="highestScore" class="${styles.statNumber || 'statNumber'}">0</p>
-              </div>
-              <div class="${styles.statCard || 'statCard'}">
-                <h3>最低分數</h3>
-                <p id="lowestScore" class="${styles.statNumber || 'statNumber'}">0</p>
-              </div>
-            </div>
+            <!-- 統計資訊已移除（依需求不顯示） -->
           </div>
         </div>
       </div>`;
@@ -235,10 +200,20 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
       }
 
       console.log(`Loading data for page: ${this.pageInfo.pageName}`);
-      console.log(`User: ${this.userInfo?.displayName}`);
 
-      // 根據頁面名稱加載不同的模擬數據
-      this.students = this._getMockDataByPage(this.pageInfo.pageName);
+      // 當前頁面 TEST1: 從實際 Excel 檔載入
+      if (this.pageInfo.pageName.toUpperCase() === 'TEST1') {
+        const serverRelativePath = '/sites/Classrooms/Shared Documents/F1/F1A/F1A_代數.xlsx';
+        await this._loadStudentDataFromExcel(serverRelativePath);
+        this._updateHeaderTitle(serverRelativePath);
+      } else {
+        // 其他頁面使用模擬資料
+        this.students = this._getMockDataByPage(this.pageInfo.pageName);
+        this._updateHeaderTitle(null);
+      }
+
+      // 依據資料動態生成欄位
+      this.columns = this._deriveColumns(this.students);
 
       // 模擬載入延遲
       setTimeout(() => {
@@ -251,16 +226,81 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
           console.error('Error in data loading timeout:', error);
           this._showError('數據載入失敗');
         }
-      }, 1000);
+      }, 500);
     } catch (error) {
       console.error('Error in _loadStudentDataByPage:', error);
       this._showError('載入頁面數據失敗');
     }
   }
 
-  private _getMockDataByPage(pageName: string): Student[] {
+  private async _loadStudentDataFromExcel(serverRelativePath: string): Promise<void> {
+    try {
+      // 下載 Excel 檔為 ArrayBuffer
+      const encodedPath = encodeURI(serverRelativePath);
+      const apiUrl = `${this.context.pageContext.web.absoluteUrl}/_api/web/GetFileByServerRelativeUrl('${encodedPath}')/$value`;
+      const response: SPHttpClientResponse = await this.context.spHttpClient.get(apiUrl, SPHttpClient.configurations.v1);
+      if (!response.ok) {
+        throw new Error(`Failed to download Excel: ${response.status} ${response.statusText}`);
+      }
+      const arrayBuffer = await response.arrayBuffer();
+
+      // 使用 SheetJS 解析
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) {
+        throw new Error('Workbook has no sheets');
+      }
+      const sheet = workbook.Sheets[firstSheetName];
+
+      // 以 header:1 轉為二維陣列，第一列為表頭
+      const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as unknown[][];
+      if (!rows || rows.length === 0) {
+        this.students = [];
+        return;
+      }
+
+      // 取得表頭
+      const headerRow = (rows[0] as (string | number | null | undefined)[]).map((h, idx) => {
+        const headerStr = h === null || h === undefined ? '' : String(h).trim();
+        return headerStr.length === 0 ? `Column${idx + 1}` : headerStr;
+      });
+
+      // 其餘資料列轉為物件陣列
+      const dataObjects: StudentRow[] = [];
+      for (let r = 1; r < rows.length; r++) {
+        const row = rows[r] as (string | number | null | undefined)[];
+        if (!row || row.length === 0) { continue; }
+        const obj: StudentRow = {};
+        for (let c = 0; c < headerRow.length; c++) {
+          const key = headerRow[c];
+          const value = row[c];
+          if (value === null || value === undefined) {
+            obj[key] = undefined;
+          } else if (typeof value === 'number') {
+            obj[key] = value;
+          } else {
+            // 嘗試將數字字串轉為數字
+            const num = Number(String(value).trim());
+            obj[key] = isNaN(num) ? String(value) : num;
+          }
+        }
+        dataObjects.push(obj);
+      }
+
+      this.students = dataObjects;
+      this.columns = headerRow;
+    } catch (error) {
+      console.error('Error in _loadStudentDataFromExcel:', error);
+      this._showError('讀取 Excel 失敗');
+      // 回退為空資料，避免中斷
+      this.students = [];
+      this.columns = [];
+    }
+  }
+
+  private _getMockDataByPage(pageName: string): StudentRow[] {
     // 根據不同頁面返回不同的模擬數據
-    const mockDataMap: { [key: string]: Student[] } = {
+    const mockDataMap: { [key: string]: StudentRow[] } = {
       'TEST1': [
         { studentId: 'T1-001', name: '張小明', chinese: 85, english: 92, math: 88, science: 90, total: 355, average: 88.75 },
         { studentId: 'T1-002', name: '李小華', chinese: 78, english: 85, math: 92, science: 87, total: 342, average: 85.5 },
@@ -285,8 +325,19 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
 
     // 如果沒有特定頁面的數據，返回默認數據
     return mockDataMap[pageName] || [
-      { studentId: 'DEFAULT-001', name: '默認學生', chinese: 80, english: 80, math: 80, science: 80, total: 320, average: 80.0 }
+      { studentId: 'DEFAULT-001', name: '默認學生', chinese1: 80, english: 80, math: 80, science: 80, total: 320, average: 80.0 }
     ];
+  }
+
+  private _deriveColumns(rows: StudentRow[]): string[] {
+    if (!rows || rows.length === 0) return [];
+    const keys = Object.keys(rows[0]);
+    // 嘗試以更自然的順序排列常見欄位
+    const preferredOrder = ['studentId', 'name'];
+    const ordered: string[] = [];
+    preferredOrder.forEach(k => { if (keys.indexOf(k) !== -1) ordered.push(k); });
+    keys.forEach(k => { if (ordered.indexOf(k) === -1) ordered.push(k); });
+    return ordered;
   }
 
   private _setupEventListeners(): void {
@@ -308,13 +359,19 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
   private _filterStudents(): void {
     try {
       const searchInput = this.domElement.querySelector('#searchInput') as HTMLInputElement;
-      const searchTerm = searchInput?.value.toLowerCase() || '';
+      const searchTerm = (searchInput?.value || '').toLowerCase();
 
-      this.filteredStudents = this.students.filter(student => {
-        const matchesSearch = student.name.toLowerCase().indexOf(searchTerm) !== -1 || 
-                              student.studentId.toLowerCase().indexOf(searchTerm) !== -1;
-        return matchesSearch;
-      });
+      if (!searchTerm) {
+        this.filteredStudents = [...this.students];
+      } else {
+        this.filteredStudents = this.students.filter(row =>
+          this.columns.some(col => {
+            const value = row[col];
+            if (value === null || value === undefined) return false;
+            return String(value).toLowerCase().indexOf(searchTerm) !== -1;
+          })
+        );
+      }
 
       this._renderTable();
       this._updateStats();
@@ -325,62 +382,68 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
 
   private _renderTable(): void {
     try {
-      const tableBody = this.domElement.querySelector('#tableBody');
-      if (!tableBody) return;
+      const headerRow = this.domElement.querySelector('#tableHeader') as HTMLElement;
+      const tableBody = this.domElement.querySelector('#tableBody') as HTMLElement;
+      if (!headerRow || !tableBody) return;
 
-      tableBody.innerHTML = this.filteredStudents.map(student => `
-        <tr>
-          <td>${this._escapeHtml(student.studentId)}</td>
-          <td>${this._escapeHtml(student.name)}</td>
-          <td>${student.chinese}</td>
-          <td>${student.english}</td>
-          <td>${student.math}</td>
-          <td>${student.science}</td>
-          <td>${student.total}</td>
-          <td>${student.average.toFixed(2)}</td>
-        </tr>
-      `).join('');
+      // Render header
+      headerRow.innerHTML = this.columns.map(col => `<th>${this._escapeHtml(col)}</th>`).join('');
+
+      // Render rows
+      tableBody.innerHTML = this.filteredStudents.map(row => {
+        const cells = this.columns.map(col => {
+          const value = row[col];
+          if (typeof value === 'number') {
+            return `<td>${value}</td>`;
+          }
+          return `<td>${this._escapeHtml(value !== undefined && value !== null ? String(value) : '')}</td>`;
+        }).join('');
+        return `<tr>${cells}</tr>`;
+      }).join('');
     } catch (error) {
       console.error('Error in _renderTable:', error);
     }
   }
 
   private _updateStats(): void {
+    // 按需求不顯示統計資訊，保留空方法以避免呼叫錯誤
+    return;
+  }
+
+  private _updateHeaderTitle(excelPath: string | null): void {
     try {
-      const totalStudents = this.domElement.querySelector('#totalStudents');
-      const averageScore = this.domElement.querySelector('#averageScore');
-      const highestScore = this.domElement.querySelector('#highestScore');
-      const lowestScore = this.domElement.querySelector('#lowestScore');
+      const headerTitle = this.domElement.querySelector('#headerTitle') as HTMLElement;
+      if (!headerTitle) return;
 
-      if (this.filteredStudents.length === 0) {
-        if (totalStudents) totalStudents.textContent = '0';
-        if (averageScore) averageScore.textContent = '0.00';
-        if (highestScore) highestScore.textContent = '0';
-        if (lowestScore) lowestScore.textContent = '0';
-        return;
+      if (excelPath) {
+        // 從路徑提取檔名並移除 .xlsx
+        const fileName = excelPath.split('/').pop() || '';
+        const displayName = fileName.replace(/\.xlsx$/i, '');
+        headerTitle.textContent = displayName;
+      } else {
+        // 其他頁面使用頁面名稱
+        headerTitle.textContent = this.pageInfo?.pageName || '學生成績';
       }
-
-      const avg = this.filteredStudents.reduce((sum, student) => sum + student.average, 0) / this.filteredStudents.length;
-      const max = Math.max(...this.filteredStudents.map(student => student.average));
-      const min = Math.min(...this.filteredStudents.map(student => student.average));
-
-      if (totalStudents) totalStudents.textContent = this.filteredStudents.length.toString();
-      if (averageScore) averageScore.textContent = avg.toFixed(2);
-      if (highestScore) highestScore.textContent = max.toString();
-      if (lowestScore) lowestScore.textContent = min.toString();
     } catch (error) {
-      console.error('Error in _updateStats:', error);
+      console.error('Error updating header title:', error);
     }
   }
 
+  // 已移除統計功能，不需要判定數值欄位的輔助函式
   private _exportToCSV(): void {
     try {
       const pageName = this.pageInfo?.pageName || 'Unknown';
-      const headers = ['學號', '姓名', '中文', '英文', '數學', '科學', '總分', '平均分'];
+      const headers = this.columns;
       const csvContent = [
         headers.join(','),
-        ...this.filteredStudents.map(student => 
-          [student.studentId, student.name, student.chinese, student.english, student.math, student.science, student.total, student.average.toFixed(2)].join(',')
+        ...this.filteredStudents.map(row => 
+          this.columns.map(col => {
+            const v = row[col];
+            const s = v === null || v === undefined ? '' : String(v);
+            return s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1
+              ? '"' + s.replace(/"/g, '""') + '"'
+              : s;
+          }).join(',')
         )
       ].join('\n');
 
