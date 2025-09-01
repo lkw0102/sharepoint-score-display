@@ -15,7 +15,7 @@
     "description": { "default": "顯示學生成績的Web Part，支持搜索、篩選和數據導出功能" },
     "officeFabricIconFontName": "Page",
     "properties": {
-      "description": "學生成績管理系統"
+      "description": "學生成績"
     }
   }]
 }
