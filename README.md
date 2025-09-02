@@ -91,81 +91,49 @@ Microsoft 強烈建議使用 SharePoint Framework (SPFx) 作為現代 SharePoint
 ## SPFx 開發到部署完整流程
 
 ```mermaid
-graph TD
+graph LR
     A[開始開發] --> B[環境準備]
     B --> C[創建 SPFx 項目]
-    C --> D[本地開發]
-    D --> E[測試和調試]
-    E --> F[構建項目]
-    F --> G[打包解決方案]
-    G --> H[部署到測試環境]
-    H --> I[測試驗證]
-    I --> J[部署到正式環境]
-    J --> K[正式環境使用]
+    C --> D[本地開發與測試]
+    D --> E[構建與打包]
+    E --> G[部署正式環境]
+    G --> H[正式使用]
 
-    B --> B1[安裝 Node.js 18.17.1+]
-    B --> B2[安裝 SPFx 工具]
-    B --> B3[配置開發證書]
-
+    B --> B1[Node.js + SPFx 工具]
     C --> C1[yo @microsoft/sharepoint]
-    C --> C2[選擇 No Framework]
-    C --> C3[配置項目名稱和描述]
-
     D --> D1[npm run serve]
-    D --> D2[本地開發服務器]
-    D --> D3[實時預覽和調試]
+    E --> E1[npm run build + package]
+    G --> G1[正式環境配置]
 
-    E --> E1[功能測試]
-    E --> E2[瀏覽器兼容性測試]
-    E --> E3[SharePoint 整合測試]
+    %% SPFx 優勢說明
+    B --> B2[🚀 現代化開發]
+    B --> B3[🏗️ 組件化架構]
+    B --> B4[🔒 安全性保障]
+    B --> B5[📱 響應式設計]
+    B --> B6[🛠️ 易於維護]
 
-    F --> F1[npm run build]
-    F --> F2[TypeScript 編譯]
-    F --> F3[資源打包]
-
-    G --> G1[npm run package-solution]
-    G --> G2[生成 .sppkg 文件]
-    G --> G3[版本管理和簽名]
-
-    H --> H1[上傳到測試環境 App Catalog]
-    H --> H2[部署和激活]
-    H --> H3[測試環境驗證]
-
-    I --> I1[功能完整性測試]
-    I --> I2[性能測試]
-    I --> I3[用戶體驗測試]
-
-    J --> J1[上傳到正式環境 App Catalog]
-    J --> J2[部署和激活]
-    J --> J3[權限配置]
-
-    K --> K1[添加到 SharePoint 頁面]
-    K --> K2[配置 Web Part 屬性]
-    K --> K3[正式使用和監控]
+    %% Embedded Code 對比
+    B --> B7[❌ Embedded Code 限制]
+    B7 --> B7a[維護困難]
+    B7 --> B7b[安全風險]
+    B7 --> B7c[性能問題]
 
     style A fill:#e1f5fe
-    style K fill:#c8e6c9
+    style H fill:#c8e6c9
     style B1 fill:#fff3e0
-    style B2 fill:#fff3e0
-    style B3 fill:#fff3e0
     style C1 fill:#f3e5f5
-    style C2 fill:#f3e5f5
-    style C3 fill:#f3e5f5
     style D1 fill:#e8f5e8
-    style D2 fill:#e8f5e8
-    style D3 fill:#e8f5e8
-    style F1 fill:#fff8e1
-    style F2 fill:#fff8e1
-    style F3 fill:#fff8e1
-    style G1 fill:#fce4ec
-    style G2 fill:#fce4ec
-    style G3 fill:#fce4ec
-    style H1 fill:#e0f2f1
-    style H2 fill:#e0f2f1
-    style H3 fill:#e0f2f1
-    style J1 fill:#f1f8e9
-    style J2 fill:#f1f8e9
-    style J3 fill:#f1f8e9
+    style E1 fill:#fff8e1
+    style G1 fill:#f1f8e9
+    style B2 fill:#e8f5e8
+    style B3 fill:#e8f5e8
+    style B4 fill:#e8f5e8
+    style B5 fill:#e8f5e8
+    style B6 fill:#e8f5e8
+    style B7 fill:#ffebee
+    style B7a fill:#ffcdd2
+    style B7b fill:#ffcdd2
+    style B7c fill:#ffcdd2
 ```
 
 ## 詳細步驟說明

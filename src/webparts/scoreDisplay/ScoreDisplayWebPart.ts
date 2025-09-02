@@ -564,6 +564,7 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
       }
       
       // 嘗試格式2 (/s/ 格式) - 這種格式需要不同的處理方式
+      // eslint-disable-next-line no-useless-escape
       match = shareLink.match(/sharepoint\.com\/:x:\/s\/([^\/]+)/);
       if (match && match[1]) {
         // 對於 /s/ 格式，我們無法直接從 URL 得到檔案路徑
