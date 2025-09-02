@@ -13,6 +13,7 @@ import * as strings from 'ScoreDisplayWebPartStrings';
 
 export interface IScoreDisplayWebPartProps {
   description: string;
+  excelFilePath: string;
 }
 
 type StudentRow = Record<string, string | number | undefined>;
@@ -25,10 +26,17 @@ interface PageInfo {
 }
 
 interface UserInfo {
+  id: number;
   displayName: string;
   email: string;
   loginName: string;
   isSiteAdmin: boolean;
+  roles: string[];
+  permissions: string[];
+  groups: string[];
+  rawUserData?: any; // 保存原始 API 數據
+  rawGroupsData?: any; // 保存原始群組數據
+  rawPermissionsData?: any; // 保存原始權限數據
 }
 
 export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDisplayWebPartProps> {
@@ -41,7 +49,7 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
 
   public render(): void {
     try {
-      this.domElement.innerHTML = `
+    this.domElement.innerHTML = `
       <div class="${styles.scoreDisplay || 'scoreDisplay'}">
         <div class="${styles.header || 'header'}">
           <h1 id="headerTitle">載入中...</h1>
@@ -58,16 +66,15 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
           </div>
           
           <div id="mainContent" style="display: none;">
-            <!-- 篩選器 -->
-            <div class="${styles.filters || 'filters'}">
-              <input 
-                id="searchInput"
-                type="text" 
-                placeholder="搜尋...（跨所有欄位）" 
-                class="${styles.filterInput || 'filterInput'}"
-              >
-              <button id="exportBtn" class="${styles.exportBtn || 'exportBtn'}">匯出 CSV</button>
-            </div>
+                                 <!-- 篩選器 -->
+                     <div class="${styles.filters || 'filters'}">
+                       <input 
+                         id="searchInput"
+                         type="text" 
+                         placeholder="搜尋...（跨所有欄位）" 
+                         class="${styles.filterInput || 'filterInput'}"
+                       >
+                     </div>
             
             <!-- 成績表格 -->
             <div class="${styles.tableContainer || 'tableContainer'}">
@@ -81,7 +88,7 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
             
             <!-- 統計資訊已移除（依需求不顯示） -->
           </div>
-        </div>
+      </div>
       </div>`;
 
       this._initializeData().catch(error => {
@@ -96,7 +103,7 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
           <h2>載入失敗</h2>
           <p>學生成績系統載入時發生錯誤，請稍後再試。</p>
           <p style="font-size: 12px; color: #666;">錯誤詳情: ${error.message}</p>
-        </div>
+      </div>
       `;
     }
   }
@@ -112,12 +119,9 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
       this.pageInfo = pageInfo;
       this.userInfo = userInfo;
       this._logUserInfo();
-      if (this.pageInfo) {
-        console.log('Current page:', this.pageInfo.pageName, '| Site URL:', this.pageInfo.siteUrl);
-      }
 
       // 根據頁面信息加載對應的學生數據
-      await this._loadStudentDataByPage();
+      await this._loadStudentData();
     } catch (error) {
       console.error('Error in _initializeData:', error);
       this._showError('初始化數據失敗');
@@ -147,32 +151,134 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
 
   private async _getUserInfo(): Promise<UserInfo> {
     try {
-      const response: SPHttpClientResponse = await this.context.spHttpClient.get(
-        `${this.context.pageContext.web.absoluteUrl}/_api/web/currentuser`,
-        SPHttpClient.configurations.v1
-      );
+      // 並行獲取用戶基本信息、群組和權限
+      const [userResponse, groupsResponse, rolesResponse] = await Promise.all([
+        this.context.spHttpClient.get(
+          `${this.context.pageContext.web.absoluteUrl}/_api/web/currentuser`,
+          SPHttpClient.configurations.v1
+        ),
+        this.context.spHttpClient.get(
+          `${this.context.pageContext.web.absoluteUrl}/_api/web/currentuser/groups`,
+          SPHttpClient.configurations.v1
+        ),
+        this.context.spHttpClient.get(
+          `${this.context.pageContext.web.absoluteUrl}/_api/web/getusereffectivepermissions(@v)?@v='${encodeURIComponent(this.context.pageContext.user.loginName)}'`,
+          SPHttpClient.configurations.v1
+        )
+      ]);
 
-      if (response.ok) {
-        const userData = await response.json();
-        return {
-          displayName: userData.Title || userData.DisplayName,
-          email: userData.Email,
-          loginName: userData.LoginName,
-          isSiteAdmin: userData.IsSiteAdmin || false
-        };
-      } else {
-        throw new Error(`Failed to get user info: ${response.statusText}`);
-      }
+      const userData = userResponse.ok ? await userResponse.json() : null;
+      const groupsData = groupsResponse.ok ? await groupsResponse.json() : { value: [] };
+      const rolesData = rolesResponse.ok ? await rolesResponse.json() : null;
+
+      // 提取群組信息
+      const groups = groupsData.value?.map((group: any) => group.Title) || [];
+      
+      // 解析權限
+      const permissions = this._parseUserPermissions(rolesData);
+      
+      // 判斷用戶角色
+      const roles = this._determineUserRoles(groups, userData?.IsSiteAdmin, permissions);
+
+      return {
+        id: userData?.Id || 0,
+        displayName: userData?.Title || userData?.DisplayName || this.context.pageContext.user.displayName,
+        email: userData?.Email || this.context.pageContext.user.email,
+        loginName: userData?.LoginName || this.context.pageContext.user.loginName,
+        isSiteAdmin: userData?.IsSiteAdmin || false,
+        roles: roles,
+        permissions: permissions,
+        groups: groups,
+        rawUserData: userData, // 保存完整的原始用戶數據
+        rawGroupsData: groupsData, // 保存完整的原始群組數據
+        rawPermissionsData: rolesData // 保存完整的原始權限數據
+      };
     } catch (error) {
       console.error('Error getting user info:', error);
       // 返回基本信息
       return {
+        id: 0,
         displayName: this.context.pageContext.user.displayName,
         email: this.context.pageContext.user.email,
         loginName: this.context.pageContext.user.loginName,
-        isSiteAdmin: false
+        isSiteAdmin: false,
+        roles: ['Guest'],
+        permissions: [],
+        groups: [],
+        rawUserData: null,
+        rawGroupsData: null,
+        rawPermissionsData: null
       };
     }
+  }
+
+  private _parseUserPermissions(rolesData: any): string[] {
+    const permissions: string[] = [];
+    if (!rolesData || !rolesData.GetUserEffectivePermissions) return permissions;
+
+    const permissionValue = rolesData.GetUserEffectivePermissions;
+    
+    // SharePoint 權限位元對應 - 使用英文原始名稱
+    const permissionMap: { [key: number]: string } = {
+      1: 'ViewListItems',
+      2: 'AddListItems', 
+      4: 'EditListItems',
+      8: 'DeleteListItems',
+      16: 'ApproveItems',
+      32: 'OpenItems',
+      64: 'ViewVersions',
+      128: 'DeleteVersions',
+      256: 'CreateAlerts',
+      512: 'ViewFormPages',
+      1024: 'AnonymousSearchAccessList',
+      2048: 'UseRemoteAPIs',
+      4096: 'UseClientIntegration',
+      8192: 'UseSelfServiceSiteCreation',
+      16384: 'UsePersonalFeatures',
+      32768: 'AddDelPrivateWebParts',
+      65536: 'UpdatePersonalWebParts',
+      131072: 'ManageLists',
+      262144: 'ManageWeb',
+      524288: 'CreateSubwebs',
+      1048576: 'ManagePermissions',
+      2097152: 'BrowseDirectories',
+      4194304: 'BrowseUserInfo',
+      8388608: 'AddAndCustomizePages',
+      16777216: 'ApplyThemeAndBorder',
+      33554432: 'ApplyStyleSheets',
+      67108864: 'CreateGroups',
+      134217728: 'BrowseWeb',
+      268435456: 'UseSSO',
+      536870912: 'EditMyUserInfo',
+      1073741824: 'EnumeratePermissions'
+    };
+
+    // 解析權限位元
+    for (const bit in permissionMap) {
+      if (Object.prototype.hasOwnProperty.call(permissionMap, bit)) {
+        if (permissionValue & parseInt(bit)) {
+          permissions.push(permissionMap[parseInt(bit)]);
+        }
+      }
+    }
+
+    return permissions;
+  }
+
+  private _determineUserRoles(groups: string[], isSiteAdmin: boolean, permissions: string[]): string[] {
+    const roles: string[] = [];
+
+    // 直接返回 SharePoint 群組名稱，不進行中文轉換
+    if (isSiteAdmin) {
+      roles.push('Site Administrator');
+    }
+
+    // 直接使用群組名稱
+    for (const group of groups) {
+      roles.push(group);
+    }
+
+    return roles;
   }
 
   private _logUserInfo(): void {
@@ -183,34 +289,29 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
       }
       console.group('SPFx UserInfo');
       console.log('userInfo:', this.userInfo);
-      console.log('displayName:', this.userInfo.displayName);
-      console.log('email:', this.userInfo.email);
-      console.log('loginName:', this.userInfo.loginName);
-      console.log('isSiteAdmin:', this.userInfo.isSiteAdmin);
+      console.log('=== 原始 API 數據 ===');
+      console.log('rawUserData:', this.userInfo.rawUserData);
+      console.log('rawGroupsData:', this.userInfo.rawGroupsData);
+      console.log('rawPermissionsData:', this.userInfo.rawPermissionsData);
       console.groupEnd();
     } catch (error) {
       console.error('Error logging user info:', error);
     }
   }
 
-  private async _loadStudentDataByPage(): Promise<void> {
+  private async _loadStudentData(): Promise<void> {
     try {
       if (!this.pageInfo) {
         throw new Error('Page info not available');
       }
 
-      console.log(`Loading data for page: ${this.pageInfo.pageName}`);
-
-      // 當前頁面 TEST1: 從實際 Excel 檔載入
-      if (this.pageInfo.pageName.toUpperCase() === 'TEST1') {
-        const serverRelativePath = '/sites/Classrooms/Shared Documents/F1/F1A/F1A_代數.xlsx';
-        await this._loadStudentDataFromExcel(serverRelativePath);
-        this._updateHeaderTitle(serverRelativePath);
-      } else {
-        // 其他頁面使用模擬資料
-        this.students = this._getMockDataByPage(this.pageInfo.pageName);
-        this._updateHeaderTitle(null);
+      // 從用戶設定的 Excel 檔案路徑載入資料
+      if (!this.properties.excelFilePath) {
+        this._showError('請在 Web Part 屬性中設定 Excel 檔案路徑');
+        return;
       }
+      await this._loadStudentDataFromExcel(this.properties.excelFilePath);
+      this._updateHeaderTitle(this.properties.excelFilePath);
 
       // 依據資料動態生成欄位
       this.columns = this._deriveColumns(this.students);
@@ -228,16 +329,36 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
         }
       }, 500);
     } catch (error) {
-      console.error('Error in _loadStudentDataByPage:', error);
+      console.error('Error in _loadStudentData:', error);
       this._showError('載入頁面數據失敗');
     }
   }
 
-  private async _loadStudentDataFromExcel(serverRelativePath: string): Promise<void> {
+  private async _loadStudentDataFromExcel(filePath: string): Promise<void> {
     try {
-      // 下載 Excel 檔為 ArrayBuffer
-      const encodedPath = encodeURI(serverRelativePath);
-      const apiUrl = `${this.context.pageContext.web.absoluteUrl}/_api/web/GetFileByServerRelativeUrl('${encodedPath}')/$value`;
+      let apiUrl: string;
+      
+      // 判斷是否為 SharePoint 共享連結格式
+      if (filePath.indexOf('sharepoint.com/:x:/') !== -1) {
+        // 檢查是否為 /s/ 格式（需要特殊處理）
+        if (filePath.indexOf('sharepoint.com/:x:/s/') !== -1) {
+          // 使用共享連結 API
+          apiUrl = `${this.context.pageContext.web.absoluteUrl}/_api/v2.0/shares/u!${btoa(filePath).replace(/=+$/, '').replace(/\//g, '_').replace(/\+/g, '-')}/driveItem/content`;
+        } else {
+          // /r/ 格式，提取伺服器相對路徑
+          const serverRelativePath = this._extractServerRelativePathFromShareLink(filePath);
+          if (!serverRelativePath) {
+            throw new Error('無法從共享連結提取檔案路徑');
+          }
+          const encodedPath = encodeURI(serverRelativePath);
+          apiUrl = `${this.context.pageContext.web.absoluteUrl}/_api/web/GetFileByServerRelativeUrl('${encodedPath}')/$value`;
+        }
+      } else {
+        // 假設為伺服器相對路徑
+        const encodedPath = encodeURI(filePath);
+        apiUrl = `${this.context.pageContext.web.absoluteUrl}/_api/web/GetFileByServerRelativeUrl('${encodedPath}')/$value`;
+      }
+      
       const response: SPHttpClientResponse = await this.context.spHttpClient.get(apiUrl, SPHttpClient.configurations.v1);
       if (!response.ok) {
         throw new Error(`Failed to download Excel: ${response.status} ${response.statusText}`);
@@ -298,37 +419,6 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
     }
   }
 
-  private _getMockDataByPage(pageName: string): StudentRow[] {
-    // 根據不同頁面返回不同的模擬數據
-    const mockDataMap: { [key: string]: StudentRow[] } = {
-      'TEST1': [
-        { studentId: 'T1-001', name: '張小明', chinese: 85, english: 92, math: 88, science: 90, total: 355, average: 88.75 },
-        { studentId: 'T1-002', name: '李小華', chinese: 78, english: 85, math: 92, science: 87, total: 342, average: 85.5 },
-        { studentId: 'T1-003', name: '王小美', chinese: 92, english: 88, math: 85, science: 94, total: 359, average: 89.75 }
-      ],
-      'TEST2': [
-        { studentId: 'T2-001', name: '陳小強', chinese: 80, english: 90, math: 95, science: 82, total: 347, average: 86.75 },
-        { studentId: 'T2-002', name: '林小芳', chinese: 88, english: 85, math: 90, science: 88, total: 351, average: 87.75 },
-        { studentId: 'T2-003', name: '黃小偉', chinese: 75, english: 92, math: 87, science: 90, total: 344, average: 86.0 }
-      ],
-      'ClassA': [
-        { studentId: 'CA-001', name: '劉小玲', chinese: 90, english: 88, math: 93, science: 85, total: 356, average: 89.0 },
-        { studentId: 'CA-002', name: '吳小傑', chinese: 82, english: 85, math: 88, science: 92, total: 347, average: 86.75 },
-        { studentId: 'CA-003', name: '趙小雅', chinese: 95, english: 90, math: 89, science: 91, total: 365, average: 91.25 }
-      ],
-      'ClassB': [
-        { studentId: 'CB-001', name: '孫小龍', chinese: 87, english: 93, math: 91, science: 89, total: 360, average: 90.0 },
-        { studentId: 'CB-002', name: '周小紅', chinese: 83, english: 87, math: 86, science: 93, total: 349, average: 87.25 },
-        { studentId: 'CB-003', name: '鄭小剛', chinese: 91, english: 89, math: 94, science: 86, total: 360, average: 90.0 }
-      ]
-    };
-
-    // 如果沒有特定頁面的數據，返回默認數據
-    return mockDataMap[pageName] || [
-      { studentId: 'DEFAULT-001', name: '默認學生', chinese1: 80, english: 80, math: 80, science: 80, total: 320, average: 80.0 }
-    ];
-  }
-
   private _deriveColumns(rows: StudentRow[]): string[] {
     if (!rows || rows.length === 0) return [];
     const keys = Object.keys(rows[0]);
@@ -343,13 +433,9 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
   private _setupEventListeners(): void {
     try {
       const searchInput = this.domElement.querySelector('#searchInput') as HTMLInputElement;
-      const exportBtn = this.domElement.querySelector('#exportBtn') as HTMLButtonElement;
 
       if (searchInput) {
         searchInput.addEventListener('input', () => this._filterStudents());
-      }
-      if (exportBtn) {
-        exportBtn.addEventListener('click', () => this._exportToCSV());
       }
     } catch (error) {
       console.error('Error setting up event listeners:', error);
@@ -410,6 +496,33 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
     return;
   }
 
+  private _extractServerRelativePathFromShareLink(shareLink: string): string | null {
+    try {
+      // 從 SharePoint 共享連結提取伺服器相對路徑
+      // 格式1：https://domain.sharepoint.com/:x:/r/sites/sitename/Shared%20Documents/path/file.xlsx
+      // 格式2：https://domain.sharepoint.com/:x:/s/sitename/EbGQlGpsdeNPuN0NXEl1AHQBsGdfG5WFZPEAIXbR4AySpQ?e=gXZ1NW
+      
+      // 嘗試格式1 (/r/ 格式)
+      let match = shareLink.match(/sharepoint\.com\/:x:\/r(\/sites\/[^?]+)/);
+      if (match && match[1]) {
+        return decodeURIComponent(match[1]);
+      }
+      
+      // 嘗試格式2 (/s/ 格式) - 這種格式需要不同的處理方式
+      match = shareLink.match(/sharepoint\.com\/:x:\/s\/([^\/]+)/);
+      if (match && match[1]) {
+        // 對於 /s/ 格式，我們無法直接從 URL 得到檔案路徑
+        // 需要使用不同的 API 方法
+        return null; // 標記為需要特殊處理
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error extracting server relative path:', error);
+      return null;
+    }
+  }
+
   private _updateHeaderTitle(excelPath: string | null): void {
     try {
       const headerTitle = this.domElement.querySelector('#headerTitle') as HTMLElement;
@@ -417,7 +530,19 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
 
       if (excelPath) {
         // 從路徑提取檔名並移除 .xlsx
-        const fileName = excelPath.split('/').pop() || '';
+        let fileName = '';
+        if (excelPath.indexOf('sharepoint.com/:x:/') !== -1) {
+          if (excelPath.indexOf('sharepoint.com/:x:/s/') !== -1) {
+            // /s/ 格式無法從 URL 得到檔名，使用通用名稱
+            fileName = 'Excel 檔案';
+          } else {
+            // /r/ 格式，從共享連結提取檔名
+            const serverPath = this._extractServerRelativePathFromShareLink(excelPath);
+            fileName = serverPath?.split('/').pop() || 'Excel 檔案';
+          }
+        } else {
+          fileName = excelPath.split('/').pop() || '';
+        }
         const displayName = fileName.replace(/\.xlsx$/i, '');
         headerTitle.textContent = displayName;
       } else {
@@ -429,38 +554,7 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
     }
   }
 
-  // 已移除統計功能，不需要判定數值欄位的輔助函式
-  private _exportToCSV(): void {
-    try {
-      const pageName = this.pageInfo?.pageName || 'Unknown';
-      const headers = this.columns;
-      const csvContent = [
-        headers.join(','),
-        ...this.filteredStudents.map(row => 
-          this.columns.map(col => {
-            const v = row[col];
-            const s = v === null || v === undefined ? '' : String(v);
-            return s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1
-              ? '"' + s.replace(/"/g, '""') + '"'
-              : s;
-          }).join(',')
-        )
-      ].join('\n');
 
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `student_grades_${pageName}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error) {
-      console.error('Error in _exportToCSV:', error);
-      alert('匯出失敗，請稍後再試');
-    }
-  }
 
   private _hideLoading(): void {
     try {
@@ -531,6 +625,11 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
               groupFields: [
                 PropertyPaneTextField('description', {
                   label: strings.DescriptionFieldLabel
+                }),
+                PropertyPaneTextField('excelFilePath', {
+                  label: 'Excel 檔案路徑',
+                  description: '輸入Excel的Link，例如：https://groupespauloedu.sharepoint.com/:x:/r/sites/Classrooms/Shared%20Documents/F1/F1_head.xlsx',
+                  placeholder: 'https://groupespauloedu.sharepoint.com/..../f1.xlsx'
                 })
               ]
             }
