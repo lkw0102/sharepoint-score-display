@@ -46,6 +46,7 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
   private columns: string[] = [];
   private pageInfo: PageInfo | null = null;
   private userInfo: UserInfo | null = null;
+  private emailPrefix: string = '';
 
   public render(): void {
     try {
@@ -118,6 +119,7 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
 
       this.pageInfo = pageInfo;
       this.userInfo = userInfo;
+      this.emailPrefix = this._extractEmailPrefix(this.userInfo.email);
       this._logUserInfo();
 
       // 根據頁面信息加載對應的學生數據
@@ -293,6 +295,9 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
       console.log('rawUserData:', this.userInfo.rawUserData);
       console.log('rawGroupsData:', this.userInfo.rawGroupsData);
       console.log('rawPermissionsData:', this.userInfo.rawPermissionsData);
+      console.log('=== 提取的 Email 信息 ===');
+      console.log('email:', this.userInfo.email);
+      console.log('emailPrefix (全域變數):', this.emailPrefix);
       console.groupEnd();
     } catch (error) {
       console.error('Error logging user info:', error);
@@ -319,7 +324,8 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
       // 模擬載入延遲
       setTimeout(() => {
         try {
-          this.filteredStudents = [...this.students];
+          // 立即執行篩選，用戶只能看到自己的資料
+          this._filterStudents();
           this._hideLoading();
           this._renderTable();
           this._updateStats();
@@ -447,10 +453,25 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
       const searchInput = this.domElement.querySelector('#searchInput') as HTMLInputElement;
       const searchTerm = (searchInput?.value || '').toLowerCase();
 
+      // 首先根據 emailPrefix 篩選學生帳號
+      let filteredByAccount = this.students;
+      if (this.emailPrefix) {
+        const studentAccountField = this._findStudentAccountField();
+        
+        filteredByAccount = this.students.filter(row => {
+          if (studentAccountField && row[studentAccountField]) {
+            const studentAccount = String(row[studentAccountField]).toLowerCase();
+            return studentAccount === this.emailPrefix.toLowerCase();
+          }
+          return false;
+        });
+      }
+
+      // 然後根據搜尋詞進一步篩選
       if (!searchTerm) {
-        this.filteredStudents = [...this.students];
+        this.filteredStudents = filteredByAccount;
       } else {
-        this.filteredStudents = this.students.filter(row =>
+        this.filteredStudents = filteredByAccount.filter(row =>
           this.columns.some(col => {
             const value = row[col];
             if (value === null || value === undefined) return false;
@@ -580,6 +601,33 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
     } catch (error) {
       console.error('Error in _showError:', error);
     }
+  }
+
+  private _findStudentAccountField(): string | null {
+    // 常見的學生帳號欄位名稱
+    const possibleFieldNames = [
+      '學生帳號'
+    ];
+
+    for (const fieldName of possibleFieldNames) {
+      if (this.columns.indexOf(fieldName) !== -1) {
+        return fieldName;
+      }
+    }
+
+    // 如果找不到，返回第一個欄位作為備選
+    return this.columns.length > 0 ? this.columns[0] : null;
+  }
+
+  private _extractEmailPrefix(email: string): string {
+    if (!email || typeof email !== 'string') {
+      return '';
+    }
+    const atIndex = email.indexOf('@');
+    if (atIndex === -1) {
+      return email; // 如果沒有 @ 符號，返回整個 email
+    }
+    return email.substring(0, atIndex);
   }
 
   private _escapeHtml(text: string): string {
