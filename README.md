@@ -395,3 +395,4 @@ Web Part使用CSS Modules，樣式文件位於：
 - 查看控制台錯誤信息
 - 檢查網絡請求（如果使用API）
 # sharepoint-score-display
+# sharepoint-score-display
