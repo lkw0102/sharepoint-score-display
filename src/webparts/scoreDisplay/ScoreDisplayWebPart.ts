@@ -346,13 +346,34 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
   private async _loadStudentDataFromExcel(filePath: string): Promise<void> {
     try {
       let apiUrl: string;
+      const origin = window.location.origin;
+
+      const getWebBaseFromPath = (pathOrUrl: string): string => {
+        try {
+          // Normalize to absolute URL to parse
+          const asUrl = new URL(pathOrUrl, origin);
+          const pathname = asUrl.pathname; // e.g., /sites/Classrooms/Shared Documents/...
+          // Handle common managed paths: /sites/{site}, /teams/{team}
+          const segments = pathname.split('/').filter(seg => seg);
+          const managedRoots = ['sites', 'teams'];
+          if (segments.length >= 2 && managedRoots.indexOf(segments[0]) !== -1) {
+            // Return origin + /sites/{site}
+            return `${asUrl.origin}/${segments[0]}/${segments[1]}`;
+          }
+          // Fallback to current web
+          return this.context.pageContext.web.absoluteUrl;
+        } catch {
+          return this.context.pageContext.web.absoluteUrl;
+        }
+      };
       
       // 判斷是否為 SharePoint 共享連結格式
       if (filePath.indexOf('sharepoint.com/:x:/') !== -1) {
         // 檢查是否為 /s/ 格式（需要特殊處理）
         if (filePath.indexOf('sharepoint.com/:x:/s/') !== -1) {
           // 使用共享連結 API
-          apiUrl = `${this.context.pageContext.web.absoluteUrl}/_api/v2.0/shares/u!${btoa(filePath).replace(/=+$/, '').replace(/\//g, '_').replace(/\+/g, '-')}/driveItem/content`;
+          // Use tenant origin for v2 shares API to avoid scoping to current web
+          apiUrl = `${origin}/_api/v2.0/shares/u!${btoa(filePath).replace(/=+$/, '').replace(/\//g, '_').replace(/\+/g, '-')}/driveItem/content`;
         } else {
           // /r/ 格式，提取伺服器相對路徑
           const serverRelativePath = this._extractServerRelativePathFromShareLink(filePath);
@@ -360,7 +381,8 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
             throw new Error('無法從共享連結提取檔案路徑');
           }
           const encodedPath = encodeURI(serverRelativePath);
-          apiUrl = `${this.context.pageContext.web.absoluteUrl}/_api/web/GetFileByServerRelativeUrl('${encodedPath}')/$value`;
+          const webBase = getWebBaseFromPath(serverRelativePath);
+          apiUrl = `${webBase}/_api/web/GetFileByServerRelativeUrl('${encodedPath}')/$value`;
         }
       } else if (filePath.indexOf('_layouts/15/doc.aspx') !== -1) {
         // SharePoint 文檔編輯連結格式
@@ -368,16 +390,20 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
         if (!docInfo) {
           throw new Error('無法從文檔編輯連結提取檔案信息');
         }
-        apiUrl = `${this.context.pageContext.web.absoluteUrl}/_api/web/GetFileById('${docInfo.fileId}')/$value`;
+        // Attempt to call against the file's web if URL reveals it; fall back to current web
+        const webBase = getWebBaseFromPath(filePath);
+        apiUrl = `${webBase}/_api/web/GetFileById('${docInfo.fileId}')/$value`;
       } else {
         // 假設為伺服器相對路徑
         const encodedPath = encodeURI(filePath);
-        apiUrl = `${this.context.pageContext.web.absoluteUrl}/_api/web/GetFileByServerRelativeUrl('${encodedPath}')/$value`;
+        const webBase = getWebBaseFromPath(filePath);
+        apiUrl = `${webBase}/_api/web/GetFileByServerRelativeUrl('${encodedPath}')/$value`;
       }
       
       const response: SPHttpClientResponse = await this.context.spHttpClient.get(apiUrl, SPHttpClient.configurations.v1);
       if (!response.ok) {
-        throw new Error(`Failed to download Excel: ${response.status} ${response.statusText}`);
+        const text = await response.text().catch(() => '');
+        throw new Error(`Failed to download Excel: ${response.status} ${response.statusText} ${text}`);
       }
       const arrayBuffer = await response.arrayBuffer();
 
