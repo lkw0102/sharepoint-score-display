@@ -120,7 +120,7 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
       this.pageInfo = pageInfo;
       this.userInfo = userInfo;
       this.emailPrefix = this._extractEmailPrefix(this.userInfo.email);
-      this._logUserInfo();
+      // this._logUserInfo();
 
       // 根據頁面信息加載對應的學生數據
       await this._loadStudentData();
@@ -283,6 +283,8 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
     return roles;
   }
 
+  // @ts-expect-error - Method is used for debugging purposes
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private _logUserInfo(): void {
     try {
       if (!this.userInfo) {

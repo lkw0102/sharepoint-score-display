@@ -88,27 +88,183 @@ Microsoft 強烈建議使用 SharePoint Framework (SPFx) 作為現代 SharePoint
 - npm 9.6.7 或更高版本
 - SharePoint Framework Yeoman生成器
 
-## 安裝和運行
+## SPFx 開發到部署完整流程
 
-### 1. 安裝依賴
+```mermaid
+graph TD
+    A[開始開發] --> B[環境準備]
+    B --> C[創建 SPFx 項目]
+    C --> D[本地開發]
+    D --> E[測試和調試]
+    E --> F[構建項目]
+    F --> G[打包解決方案]
+    G --> H[部署到測試環境]
+    H --> I[測試驗證]
+    I --> J[部署到正式環境]
+    J --> K[正式環境使用]
+
+    B --> B1[安裝 Node.js 18.17.1+]
+    B --> B2[安裝 SPFx 工具]
+    B --> B3[配置開發證書]
+
+    C --> C1[yo @microsoft/sharepoint]
+    C --> C2[選擇 No Framework]
+    C --> C3[配置項目名稱和描述]
+
+    D --> D1[npm run serve]
+    D --> D2[本地開發服務器]
+    D --> D3[實時預覽和調試]
+
+    E --> E1[功能測試]
+    E --> E2[瀏覽器兼容性測試]
+    E --> E3[SharePoint 整合測試]
+
+    F --> F1[npm run build]
+    F --> F2[TypeScript 編譯]
+    F --> F3[資源打包]
+
+    G --> G1[npm run package-solution]
+    G --> G2[生成 .sppkg 文件]
+    G --> G3[版本管理和簽名]
+
+    H --> H1[上傳到測試環境 App Catalog]
+    H --> H2[部署和激活]
+    H --> H3[測試環境驗證]
+
+    I --> I1[功能完整性測試]
+    I --> I2[性能測試]
+    I --> I3[用戶體驗測試]
+
+    J --> J1[上傳到正式環境 App Catalog]
+    J --> J2[部署和激活]
+    J --> J3[權限配置]
+
+    K --> K1[添加到 SharePoint 頁面]
+    K --> K2[配置 Web Part 屬性]
+    K --> K3[正式使用和監控]
+
+    style A fill:#e1f5fe
+    style K fill:#c8e6c9
+    style B1 fill:#fff3e0
+    style B2 fill:#fff3e0
+    style B3 fill:#fff3e0
+    style C1 fill:#f3e5f5
+    style C2 fill:#f3e5f5
+    style C3 fill:#f3e5f5
+    style D1 fill:#e8f5e8
+    style D2 fill:#e8f5e8
+    style D3 fill:#e8f5e8
+    style F1 fill:#fff8e1
+    style F2 fill:#fff8e1
+    style F3 fill:#fff8e1
+    style G1 fill:#fce4ec
+    style G2 fill:#fce4ec
+    style G3 fill:#fce4ec
+    style H1 fill:#e0f2f1
+    style H2 fill:#e0f2f1
+    style H3 fill:#e0f2f1
+    style J1 fill:#f1f8e9
+    style J2 fill:#f1f8e9
+    style J3 fill:#f1f8e9
+```
+
+## 詳細步驟說明
+
+### 1. **環境準備**
 ```bash
+# 安裝 Node.js 18.17.1 或更高版本
+nvm install 18.17.1
+nvm use 18.17.1
+
+# 安裝 SPFx 工具
+npm install -g @microsoft/generator-sharepoint
+npm install -g yo
+
+# 配置開發證書
+npx gulp trust-dev-cert
+```
+
+### 2. **創建 SPFx 項目**
+```bash
+# 創建新項目
+yo @microsoft/sharepoint
+
+# 選擇配置：
+# - 項目名稱：student-grades-spfx
+# - 框架：No Framework
+# - 描述：學生成績顯示 Web Part
+```
+
+### 3. **本地開發**
+```bash
+# 安裝依賴
 npm install
-```
 
-### 2. 本地開發
-```bash
+# 啟動開發服務器
 npm run serve
+
+# 瀏覽器訪問：https://localhost:4321
 ```
 
-### 3. 構建項目
+### 4. **測試和調試**
+- 功能測試：確保所有功能正常運作
+- 瀏覽器測試：Chrome、Edge、Firefox 兼容性
+- SharePoint 整合測試：權限、數據讀取等
+
+### 5. **構建項目**
 ```bash
+# 構建項目
 npm run build
+
+# 檢查構建結果
+# 確保沒有 TypeScript 錯誤
+# 確保所有資源正確打包
 ```
 
-### 4. 打包解決方案
+### 6. **打包解決方案**
 ```bash
+# 打包解決方案
 npm run package-solution
+
+# 生成文件：
+# - student-grades-spfx.sppkg
+# - 部署說明文檔
 ```
+
+### 7. **部署到測試環境**
+1. 上傳 `.sppkg` 文件到測試環境 App Catalog
+2. 部署和激活解決方案
+3. 在測試頁面添加 Web Part
+4. 進行全面測試
+
+### 8. **測試驗證**
+- 功能完整性測試
+- 性能測試（載入速度、響應時間）
+- 用戶體驗測試
+- 錯誤處理測試
+
+### 9. **部署到正式環境**
+1. 上傳 `.sppkg` 文件到正式環境 App Catalog
+2. 部署和激活解決方案
+3. 配置適當的權限
+
+### 10. **正式環境使用**
+1. 在 SharePoint 頁面添加 Web Part
+2. 配置 Web Part 屬性（Excel 文件路徑等）
+3. 監控使用情況和性能
+4. 收集用戶反饋
+
+## 部署檢查清單
+
+- [ ] 開發環境測試通過
+- [ ] 構建無錯誤
+- [ ] 打包成功
+- [ ] 測試環境部署成功
+- [ ] 功能驗證完成
+- [ ] 正式環境部署成功
+- [ ] 權限配置正確
+- [ ] 用戶培訓完成
+- [ ] 監控和維護計劃就緒
 
 ## 數據結構
 
