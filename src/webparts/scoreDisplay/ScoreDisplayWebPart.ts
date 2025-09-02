@@ -14,6 +14,7 @@ import * as strings from 'ScoreDisplayWebPartStrings';
 export interface IScoreDisplayWebPartProps {
   description: string;
   excelFilePath: string;
+  headerTitle?: string; // Optional custom header title
 }
 
 type StudentRow = Record<string, string | number | undefined>;
@@ -67,15 +68,15 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
           </div>
           
           <div id="mainContent" style="display: none;">
-                                 <!-- 篩選器 -->
-                     <div class="${styles.filters || 'filters'}">
+                                 <!-- 篩選器 - 暫時隱藏 -->
+                     <!-- <div class="${styles.filters || 'filters'}">
                        <input 
                          id="searchInput"
                          type="text" 
                          placeholder="搜尋...（跨所有欄位）" 
                          class="${styles.filterInput || 'filterInput'}"
                        >
-                     </div>
+                     </div> -->
             
             <!-- 成績表格 -->
             <div class="${styles.tableContainer || 'tableContainer'}">
@@ -361,6 +362,13 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
           const encodedPath = encodeURI(serverRelativePath);
           apiUrl = `${this.context.pageContext.web.absoluteUrl}/_api/web/GetFileByServerRelativeUrl('${encodedPath}')/$value`;
         }
+      } else if (filePath.indexOf('_layouts/15/doc.aspx') !== -1) {
+        // SharePoint 文檔編輯連結格式
+        const docInfo = this._extractDocInfoFromEditLink(filePath);
+        if (!docInfo) {
+          throw new Error('無法從文檔編輯連結提取檔案信息');
+        }
+        apiUrl = `${this.context.pageContext.web.absoluteUrl}/_api/web/GetFileById('${docInfo.fileId}')/$value`;
       } else {
         // 假設為伺服器相對路徑
         const encodedPath = encodeURI(filePath);
@@ -440,11 +448,11 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
 
   private _setupEventListeners(): void {
     try {
-      const searchInput = this.domElement.querySelector('#searchInput') as HTMLInputElement;
-
-      if (searchInput) {
-        searchInput.addEventListener('input', () => this._filterStudents());
-      }
+      // 暫時隱藏搜索功能
+      // const searchInput = this.domElement.querySelector('#searchInput') as HTMLInputElement;
+      // if (searchInput) {
+      //   searchInput.addEventListener('input', () => this._filterStudents());
+      // }
     } catch (error) {
       console.error('Error setting up event listeners:', error);
     }
@@ -519,6 +527,30 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
     return;
   }
 
+  private _extractDocInfoFromEditLink(editLink: string): { fileId: string; fileName?: string } | null {
+    try {
+      // 從 SharePoint 文檔編輯連結提取檔案信息
+      // 格式：https://domain.sharepoint.com/sites/sitename/_layouts/15/doc.aspx?sourcedoc={GUID}&action=edit
+      
+      // 提取 sourcedoc 參數（檔案 GUID）
+      const sourcedocMatch = editLink.match(/sourcedoc=([^&]+)/);
+      if (!sourcedocMatch || !sourcedocMatch[1]) {
+        return null;
+      }
+      
+      const fileId = sourcedocMatch[1].replace(/[{}]/g, ''); // 移除大括號
+      
+      // 嘗試提取檔案名稱（如果有的話）
+      const fileNameMatch = editLink.match(/&file=([^&]+)/);
+      const fileName = fileNameMatch ? decodeURIComponent(fileNameMatch[1]) : undefined;
+      
+      return { fileId, fileName };
+    } catch (error) {
+      console.error('Error extracting doc info from edit link:', error);
+      return null;
+    }
+  }
+
   private _extractServerRelativePathFromShareLink(shareLink: string): string | null {
     try {
       // 從 SharePoint 共享連結提取伺服器相對路徑
@@ -551,7 +583,14 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
       const headerTitle = this.domElement.querySelector('#headerTitle') as HTMLElement;
       if (!headerTitle) return;
 
-      if (excelPath) {
+      // 優先使用用戶設定的自定義標題
+      if (this.properties.headerTitle && this.properties.headerTitle.trim()) {
+        headerTitle.textContent = this.properties.headerTitle.trim();
+        return;
+      }
+
+      // 如果沒有自定義標題，則從檔案路徑提取
+      if (excelPath && excelPath.trim()) {
         // 從路徑提取檔名並移除 .xlsx
         let fileName = '';
         if (excelPath.indexOf('sharepoint.com/:x:/') !== -1) {
@@ -563,13 +602,17 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
             const serverPath = this._extractServerRelativePathFromShareLink(excelPath);
             fileName = serverPath?.split('/').pop() || 'Excel 檔案';
           }
+        } else if (excelPath.indexOf('_layouts/15/doc.aspx') !== -1) {
+          // 文檔編輯連結格式
+          const docInfo = this._extractDocInfoFromEditLink(excelPath);
+          fileName = docInfo?.fileName || 'Excel 檔案';
         } else {
           fileName = excelPath.split('/').pop() || '';
         }
         const displayName = fileName.replace(/\.xlsx$/i, '');
         headerTitle.textContent = displayName;
       } else {
-        // 其他頁面使用頁面名稱
+        // 如果沒有 Excel 路徑，使用頁面名稱或預設標題
         headerTitle.textContent = this.pageInfo?.pageName || '學生成績';
       }
     } catch (error) {
@@ -673,14 +716,17 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
             {
               groupName: strings.BasicGroupName,
               groupFields: [
-                PropertyPaneTextField('description', {
-                  label: strings.DescriptionFieldLabel
+                PropertyPaneTextField('headerTitle', {
+                  label: '標題',
+                  description: '可選：設定自定義的標題，留空則自動使用檔案名稱',
+                  placeholder: '例如：F1A代數'
                 }),
                 PropertyPaneTextField('excelFilePath', {
                   label: 'Excel 檔案路徑',
                   description: '輸入Excel的Link，例如：https://groupespauloedu.sharepoint.com/:x:/r/sites/Classrooms/Shared%20Documents/F1/F1_head.xlsx',
                   placeholder: 'https://groupespauloedu.sharepoint.com/..../f1.xlsx'
-                })
+                }),
+     
               ]
             }
           ]
