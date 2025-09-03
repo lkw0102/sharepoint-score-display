@@ -57,6 +57,8 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
   private pageInfo: PageInfo | null = null;
   private userInfo: UserInfo | null = null;
   private emailPrefix: string = '';
+  private originalUrl: string = ''; // 保存原始URL
+  private _pageRefreshHandlers: { beforeunload: () => void; visibilitychange: () => void } | null = null; // 頁面刷新事件處理器
 
   public render(): void {
     try {
@@ -145,6 +147,9 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
       const currentUrl = window.location.href;
       const urlParts = currentUrl.split('/');
       const pageName = urlParts[urlParts.length - 1].replace('.aspx', '');
+      
+      // 自動改變瀏覽器URL到根站點
+      this._updateBrowserUrl();
       
       return {
         pageName: pageName,
@@ -726,8 +731,90 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
     return div.innerHTML;
   }
 
+  private _updateBrowserUrl(): void {
+    try {
+      // 保存原始URL（如果還沒保存的話）
+      if (!this.originalUrl) {
+        this.originalUrl = window.location.href;
+        console.log('Original URL saved:', this.originalUrl);
+      }
+      
+      // 獲取根站點URL
+      const rootSiteUrl = this.context.pageContext.web.absoluteUrl;
+      
+      // 使用 history.replaceState 來改變URL，不會觸發頁面刷新
+      // 這樣用戶的瀏覽器地址欄會顯示根站點URL，但頁面內容保持不變
+      window.history.replaceState({}, '', rootSiteUrl);
+      
+      console.log('Browser URL updated to:', rootSiteUrl);
+      
+      // 監聽頁面刷新事件，在刷新前恢復原始URL
+      this._setupPageRefreshHandler();
+    } catch (error) {
+      console.error('Error updating browser URL:', error);
+    }
+  }
+
+  private _setupPageRefreshHandler(): void {
+    try {
+      // 監聽 beforeunload 事件（頁面刷新或關閉前）
+      const handleBeforeUnload = () => {
+        if (this.originalUrl && this.originalUrl !== window.location.href) {
+          // 在頁面刷新前恢復原始URL
+          window.history.replaceState({}, '', this.originalUrl);
+          console.log('Original URL restored before refresh:', this.originalUrl);
+        }
+      };
+
+      // 監聽 visibilitychange 事件（頁面隱藏時，通常是刷新前）
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'hidden' && this.originalUrl && this.originalUrl !== window.location.href) {
+          // 頁面隱藏時恢復原始URL
+          window.history.replaceState({}, '', this.originalUrl);
+          console.log('Original URL restored on page hide:', this.originalUrl);
+        }
+      };
+
+      // 添加事件監聽器
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      
+      // 保存事件監聽器引用，以便後續清理
+      this._pageRefreshHandlers = {
+        beforeunload: handleBeforeUnload,
+        visibilitychange: handleVisibilityChange
+      };
+      
+      console.log('Page refresh handlers set up successfully');
+    } catch (error) {
+      console.error('Error setting up page refresh handler:', error);
+    }
+  }
+
   protected onInit(): Promise<void> {
     return Promise.resolve();
+  }
+
+  protected onDispose(): void {
+    // 清理頁面刷新事件監聽器
+    this._cleanupPageRefreshHandlers();
+  }
+
+  private _cleanupPageRefreshHandlers(): void {
+    try {
+      if (this._pageRefreshHandlers) {
+        // 移除事件監聽器
+        window.removeEventListener('beforeunload', this._pageRefreshHandlers.beforeunload);
+        document.removeEventListener('visibilitychange', this._pageRefreshHandlers.visibilitychange);
+        
+        // 清空引用
+        this._pageRefreshHandlers = null;
+        
+        console.log('Page refresh handlers cleaned up successfully');
+      }
+    } catch (error) {
+      console.error('Error cleaning up page refresh handlers:', error);
+    }
   }
 
   protected onThemeChanged(currentTheme: IReadonlyTheme | undefined): void {
