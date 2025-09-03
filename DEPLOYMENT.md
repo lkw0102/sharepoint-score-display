@@ -1,6 +1,12 @@
 # 學生成績顯示 Web Part 部署指南
 
-## 🎉 恭喜！你的SPFx Web Part已經成功打包
+sh build-sppkg.sh
+``
+npm ci
+npx gulp clean
+npx gulp bundle --ship
+npx gulp package-solution --ship
+``
 
 ### 📦 生成的文件
 

@@ -45,6 +45,15 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
   private students: StudentRow[] = [];
   private filteredStudents: StudentRow[] = [];
   private columns: string[] = [];
+  // Columns that should be hidden from the rendered table (headers and cells)
+  private readonly hiddenColumnNames: Set<string> = new Set([
+    'School Year',
+    'Teacher Name',
+    '學生姓名',
+    '學生帳號',
+    'Subject',
+    'Class section'
+  ]);
   private pageInfo: PageInfo | null = null;
   private userInfo: UserInfo | null = null;
   private emailPrefix: string = '';
@@ -469,7 +478,9 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
     const ordered: string[] = [];
     preferredOrder.forEach(k => { if (keys.indexOf(k) !== -1) ordered.push(k); });
     keys.forEach(k => { if (ordered.indexOf(k) === -1) ordered.push(k); });
-    return ordered;
+    // Filter out hidden columns by display name
+    const visible = ordered.filter(k => !this.hiddenColumnNames.has(k));
+    return visible;
   }
 
   private _setupEventListeners(): void {
@@ -678,17 +689,24 @@ export default class ScoreDisplayWebPart extends BaseClientSideWebPart<IScoreDis
   private _findStudentAccountField(): string | null {
     // 常見的學生帳號欄位名稱
     const possibleFieldNames = [
-      '學生帳號'
+      '學生帳號',
+      'Student Account',
+      'studentAccount',
+      'account'
     ];
 
+    // Search in raw data keys to allow hidden columns
+    const sample = this.students && this.students.length > 0 ? this.students[0] : null;
+    const availableKeys = sample ? Object.keys(sample) : [];
+
     for (const fieldName of possibleFieldNames) {
-      if (this.columns.indexOf(fieldName) !== -1) {
+      if (availableKeys.indexOf(fieldName) !== -1) {
         return fieldName;
       }
     }
 
-    // 如果找不到，返回第一個欄位作為備選
-    return this.columns.length > 0 ? this.columns[0] : null;
+    // 如果找不到，返回 null（避免誤判第一欄）
+    return null;
   }
 
   private _extractEmailPrefix(email: string): string {
